@@ -1,5 +1,4 @@
 #!/bin/bash
-# Call from Jenkins #
 MySQLHostRegion=$1
 Port=$2
 UserName=$3
@@ -9,8 +8,8 @@ AlterTable="$6"
 AlterCommand=$(echo $7 | sed 's/##/ /g' | sed 's/~/ /g' | sed 's/"//g');
 dryRun=$8
 replicaLag=$9
-array_EU="10.50.50.1,10.50.50.2,10.50.50.3" # Change IP's #
-array_US="10.55.50.1,10.55.50.1,10.55.55.3" # Change IP's #
+array_EU="10.0.0.4,10.0.0.5,10.0.0.12"
+array_US="10.5.0.4,10.5.0.5,10.4.0.8"
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 base_dir="/home/cpq"
 
@@ -20,7 +19,7 @@ base_dir="/home/cpq"
 # missed packages: apt install libdbi-perl libdbd-mysql-perl libterm-readkey-perl libio-socket-ssl-perl
 # dpkg -i percona-toolkit_3.3.1-1.bionic_amd64.deb
 
-if [ -z $replicaLag ]; then 
+if [[ -z $replicaLag || $replicaLag -eq 0 ]]; then 
   replicaLag=1; 
 fi
  
@@ -28,7 +27,7 @@ replicaLagSec=$((replicaLag * 60 ))
 
 # Find master by region EU US TEST #
 if [ $MySQLHostRegion == "TEST" ]; then
-  host="1.2.3.4" 
+  host="10.70.1.12"
 elif [ $MySQLHostRegion == "EU" ]; then
   for host in $(echo $array_EU | sed "s/,/ /g")
     do
@@ -61,7 +60,7 @@ fi
 
 if [[ -n $replicaLagSec && $replicaLagSec -gt 0 ]]; then
 #  replicationProperties="--check-slave-lag "
-  replicationProperties=" --nocheck-replication-filters "
+  replicationProperties=" --nocheck-replication-filters --max-lag  $replicaLagSec"
 else
   replicationProperties=" --nocheck-replication-filters "
 fi
