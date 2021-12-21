@@ -32,7 +32,7 @@ if [ $MySQLHostRegion == "TEST" ]; then
 elif [ $MySQLHostRegion == "EU" ]; then
   for host in $(echo $array_EU | sed "s/,/ /g")
     do
-      aa=$(mysql -N -s -uroot -proot -h $host -e"show slave hosts" 2>&1 | grep -v mysql: | wc -l)
+      aa=$(mysql -N -s -u$UserName -p$Password -h $host -e"show slave hosts" 2>&1 | grep -v mysql: | wc -l)
       if [ $aa -gt 0 ]; then
         break
       else
@@ -42,7 +42,7 @@ elif [ $MySQLHostRegion == "EU" ]; then
 elif [ $MySQLHostRegion == "US" ]; then
   for host in $(echo $array_US | sed "s/,/ /g")
     do
-      aa=$(mysql -N -s -uroot -proot -h $host -e"show slave hosts" 2>&1 | grep -v mysql: | wc -l)
+      aa=$(mysql -N -s -u$UserName -p$Password -h $host -e"show slave hosts" 2>&1 | grep -v mysql: | wc -l)
       if [ $aa -gt 0 ]; then
         break
       else
