@@ -1,4 +1,5 @@
 #!/bin/bash
+# Call from Jenkins #
 MySQLHostRegion=$1
 Port=$2
 UserName=$3
@@ -8,8 +9,8 @@ AlterTable="$6"
 AlterCommand=$(echo $7 | sed 's/##/ /g' | sed 's/~/ /g' | sed 's/"//g');
 dryRun=$8
 replicaLag=$9
-array_EU="10.50.0.4,10.50.0.5,10.50.0.12"
-array_US="10.54.0.4,10.54.0.5,10.54.0.8"
+array_EU="10.50.50.1,10.50.50.2,10.50.50.3" # Change IP's #
+array_US="10.54.50.1,10.54.50.1,10.54.50.1" # Change IP's #
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 base_dir="/home/cpq"
 
@@ -27,7 +28,7 @@ replicaLagSec=$((replicaLag * 60 ))
 
 # Find master by region EU US TEST #
 if [ $MySQLHostRegion == "TEST" ]; then
-  host="10.70.1.12"
+  host="1.2.3.4" 
 elif [ $MySQLHostRegion == "EU" ]; then
   for host in $(echo $array_EU | sed "s/,/ /g")
     do
