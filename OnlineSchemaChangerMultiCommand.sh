@@ -10,7 +10,7 @@ AlterCommand=$(echo $7 | sed 's/##/ /g' | sed 's/~/ /g' | sed 's/"//g');
 dryRun=$8
 replicaLag=$9
 array_EU="10.50.50.1,10.50.50.2,10.50.50.3" # Change IP's #
-array_US="10.54.50.1,10.54.50.1,10.54.50.1" # Change IP's #
+array_US="10.55.50.1,10.55.50.1,10.55.55.3" # Change IP's #
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 base_dir="/home/cpq"
 
