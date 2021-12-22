@@ -11,7 +11,7 @@ replicaLag=$9
 array_EU="10.0.0.4,10.0.0.5,10.0.0.12"
 array_US="10.5.0.4,10.5.0.5,10.4.0.8"
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-base_dir="/home/cpq"
+base_dir=$HOME
 
 # Links #
 #cd /home/cpq
