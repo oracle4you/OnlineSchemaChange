@@ -7,8 +7,8 @@ scriptDirectory=$(echo $5 | sed 's/##/ /g' | sed 's/~/ /g' | sed 's/"//g');
 dryRun=$6
 replicaLag=$7
 scriptFilesArray=$8
-array_EU="10.0.0.4,10.0.0.5,10.0.0.12"
-array_US="10.5.0.4,10.5.0.5,10.4.0.8"
+array_EU="10.50.0.4,10.50.0.5,10.50.0.12"
+array_US="10.54.0.4,10.54.0.5,10.54.0.8"
 array_ALL="$array_EU,$array_US"
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 base_dir="/home/cpq"
@@ -110,11 +110,12 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
     for scriptFile in $(echo $scriptFilesArray | sed "s/,/ /g")
       do
         # Clean remarked lines #
+        sed -i '|/*|-- |d' ${scriptDirectory}/${scriptFile}
         sed -i '/^\s*--/ d' ${scriptDirectory}/${scriptFile}
         
         AlterCommand=$(cat ${scriptDirectory}/$scriptFile)
 
-        echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Changes will be done on region: $MySQLHostRegion"
+        echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Changes will be done on region: $MySQLHostRegion, host: $MySQLHostIP, Dry Run: $dryRun"
         # Command Splitter #
         AlterCommand=$(echo $AlterCommand | sed "s/';'/'|'/g" | sed "s/';;'/'||'/g" | sed "s/';;;'/'|||'/g") # Remove ';' incase DEFAULT ';' to not be caunted as multi-command delimiter 
         loopIds=$(echo $AlterCommand | grep -o ";" | wc -l)
@@ -158,7 +159,21 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
               fixedCommand=$(echo $fixedCommand | sed "s/|/;/g" | sed "s/||/;;/g" | sed "s/|||/;;;/g");
               # Write to temp db in case of DRY RUN #
               if [ $dryRun == "Yes" ]; then
-                fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+
+                # Special section for UPDATE SET commands ==> create temp table for DY RUN #
+                if [[ $(echo $fixedCommand | awk '{print $1}') == "UPDATE" && $(echo $fixedCommand | awk '{print $2}') == "$Database.$AlterTable" ]]; then
+                  updateCommand="CREATE TABLE IF NOT EXISTS temp.$AlterTable LIKE $Database.$AlterTable;"
+                  dropCommand="DROP TABLE IF EXISTS temp.$AlterTable;"
+                  mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$updateCommand" 2>&1 | grep -v mysql:  
+                fi
+
+                # Special section for call procedures commands ==> just expose the command #
+                if [[ ! $(echo $fixedCommand | awk '{print $1}') == "call" && ! $(echo $fixedCommand | awk '{print $1}') == "CALL" ]]; then 
+                  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+                else 
+                  fixedCommand="SELECT 'CALL db_manager.make_partitioned_by_instance' as command;"  
+                fi  
+                
                 if [[ $(echo $fixedCommand | awk '{print $1}') == "CREATE" && $(echo $fixedCommand | awk '{print $2}') == "TABLE" ]]; then
                   dropCommand=$(echo $dropCommand "DROP TABLE IF EXISTS temp.${AlterTable};");
                 fi  

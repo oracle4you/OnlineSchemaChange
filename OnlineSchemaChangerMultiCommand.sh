@@ -8,10 +8,10 @@ AlterTable="$6"
 AlterCommand=$(echo $7 | sed 's/##/ /g' | sed 's/~/ /g' | sed 's/"//g');
 dryRun=$8
 replicaLag=$9
-array_EU="10.0.0.4,10.0.0.5,10.0.0.12"
-array_US="10.5.0.4,10.5.0.5,10.4.0.8"
+array_EU="10.50.0.4,10.50.0.5,10.50.0.12"
+array_US="10.54.0.4,10.54.0.5,10.54.0.8"
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-base_dir=$HOME
+base_dir="/home/cpq"
 
 # Links #
 #cd /home/cpq
