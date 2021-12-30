@@ -110,7 +110,7 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
     for scriptFile in $(echo $scriptFilesArray | sed "s/,/ /g")
       do
         # Clean remarked lines #
-        sed -i '|/*|-- |d' ${scriptDirectory}/${scriptFile}
+        sed -i '/^\//d' ${scriptDirectory}/${scriptFile}
         sed -i '/^\s*--/ d' ${scriptDirectory}/${scriptFile}
         
         AlterCommand=$(cat ${scriptDirectory}/$scriptFile)
