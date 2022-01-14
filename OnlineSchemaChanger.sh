@@ -27,7 +27,7 @@ replicaLagSec=$((replicaLag * 60 ))
 
 # Find master by region EU US TEST #
 if [ $MySQLHostRegion == "TEST" ]; then
-  host="10.70.1.12"
+  host="10.70.1.9"
 elif [ $MySQLHostRegion == "EU" ]; then
   for host in $(echo $array_EU | sed "s/,/ /g")
     do

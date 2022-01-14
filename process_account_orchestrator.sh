@@ -15,6 +15,8 @@ disableOnSource=$4
 array_EU="10.50.0.5,10.50.0.12,10.50.0.4" # EU Hosts - On this list first slaves and first between slaves is non snapshoted
 array_US="10.54.0.5,10.54.0.4,10.54.0.8"  # US Hosts - On this list first slaves and first between slaves is non snapshoted
 array_TS="10.69.1.4"
+array_STAGE_US="10.102.2.4"
+array_STAGE_EU="10.101.2.4"
 base_dir="/home/cpq"
 dbUserName="root"
 dbPassword="root"
@@ -47,10 +49,10 @@ fi
 if [[ ${s_region} == ${d_region} || -z $s_region || -z $d_region ]]; then
   echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Mandatory parameters omitted or equal source and destination region${NOC}"
   exit 1
-elif [[ ! $s_region == "US" && ! $s_region == "EU" && ! $s_region == "TS" ]]; then
+elif [[ ! $s_region == "US" && ! $s_region == "EU" && ! $s_region == "TS" && ! $s_region == "STAGE-US" && ! $s_region == "STAGE-EU" ]]; then
    echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Source region doesnt exists. Possible values are US or EU or TS${NOC}"
    exit 1
-elif [[ ! $d_region == "US" && ! $d_region == "EU" && ! $d_region == "TS" ]]; then
+elif [[ ! $d_region == "US" && ! $d_region == "EU" && ! $d_region == "TS" && ! $s_region == "STAGE-US" && ! $s_region == "STAGE-EU" ]]; then
   echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Destination region doesnt exists. Possible values are US or EU or TS${NOC}"
   exit 1
 fi
@@ -72,6 +74,10 @@ elif  [ $s_region == "US" ]; then
         break
       fi
     done
+elif [ $s_region == "STAGE-US" ]; then
+  s_host=$array_STAGE_US
+elif [ $s_region == "STAGE-EU" ]; then
+  s_host=$array_STAGE_EU       
 fi
 m_s_host=$s_host
 mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
@@ -93,6 +99,10 @@ elif  [ $s_region == "US" ]; then
         break
       fi
     done
+elif [ $s_region == "STAGE-US" ]; then
+  s_host=$array_STAGE_US
+elif [ $s_region == "STAGE-EU" ]; then
+  s_host=$array_STAGE_EU         
 fi
 
 echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found slave for region $s_region $s_host"
@@ -125,6 +135,10 @@ elif  [ $d_region == "US" ]; then
     done
 elif [ $d_region == "TS" ]; then    # For test purposes 
   d_host=$array_TS
+elif [ $d_region == "STAGE-US" ]; then    # For test purposes 
+  d_host=$array_STAGE_US  
+elif [ $d_region == "STAGE-EU" ]; then    # For test purposes 
+  d_host=$array_STAGE_EU  
 fi
 
 echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found master for region $d_region $d_host"
