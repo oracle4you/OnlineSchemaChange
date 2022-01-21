@@ -1,2 +1,2 @@
 #!/bin/bash
- pt-online-schema-change --alter ' MODIFY COLUMN cfas_enable_auto_join_rules tinyint(1) default 1 null' D=configuration,t=cfas_account_settings --host 10.54.0.8 --user root --password root --alter-foreign-keys-method auto --max-load Threads_running=150 --critical-load Threads_running=300 --nocheck-replication-filters --max-lag 240 --chunk-size 1000 --chunk-time 0.5 --chunk-size-limit 4.0 --execute
+ pt-online-schema-change --alter ' ADD COLUMN myNumber int not null default 0' D=izzy,t=test1 --host 10.70.1.4 --user root --password root --alter-foreign-keys-method auto --max-load Threads_running=150 --critical-load Threads_running=300 --chunk-size 1000 --chunk-time 0.5 --chunk-size-limit 4.0 --dry-run --print

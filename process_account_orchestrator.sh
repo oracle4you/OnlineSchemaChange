@@ -80,7 +80,7 @@ elif [ $s_region == "STAGE-EU" ]; then
   s_host=$array_STAGE_EU       
 fi
 m_s_host=$s_host
-mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
+#mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
 
 # Find source --> read from slave only to prevent potential locks !!! #
 if [ $s_region == "EU" ]; then
@@ -144,11 +144,11 @@ fi
 echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found master for region $d_region $d_host"
 
 # Sync procedures on source --> write to master or TS as stand alone #
-mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
+#mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
 
 
 # Sync procedures on destination --> write to master or TS as stand alone #
-mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
+#mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
 
 # Check if account exists on destination #
 account_exists_dest=$(mysql -N -s -uroot -proot -h $d_host -e"select count(1) from db_manager.accounts_partitions where account_name='$account'" 2>&1 | grep -v mysql:)

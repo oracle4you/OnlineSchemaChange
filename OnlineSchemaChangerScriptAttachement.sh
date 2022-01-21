@@ -9,10 +9,11 @@ replicaLag=$7
 scriptFilesArray=$8
 array_EU="10.50.0.4,10.50.0.5,10.50.0.12"
 array_US="10.54.0.4,10.54.0.5,10.54.0.8"
+array_STAGE_CONSOLIDATED="10.70.1.7,10.70.1.4"
 array_ALL="$array_EU,$array_US"
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 base_dir="/home/cpq"
-
+#set -x
 
 
 # Links #
@@ -37,7 +38,7 @@ elif [ $MySQLHostRegion == "STAGE-CPQ" ]; then
 elif [ $MySQLHostRegion == "TEST" ]; then
   host="10.70.1.9"
 elif [ $MySQLHostRegion == "API-DB" ]; then
-  host="10.66.0.19"
+  host="10.66.0.20"
 
 elif [ $MySQLHostRegion == "EU" ]; then
   for host in $(echo $array_EU | sed "s/,/ /g")
@@ -57,9 +58,19 @@ elif [ $MySQLHostRegion == "US" ]; then
         break
       else
         host=""  
-      fi
-      
+      fi    
     done
+elif [ $MySQLHostRegion == "STAGE-CONSOLIDATED" ]; then
+  for host in $(echo $array_STAGE_CONSOLIDATED | sed "s/,/ /g")
+    do
+      aa=$(mysql -N -s -u$UserName -p$Password -h $host -e"show slave hosts" 2>&1 | grep -v mysql: | wc -l)
+      if [ $aa -gt 0 ]; then
+        break
+      else
+        host=""  
+      fi    
+    done
+
 elif [ $MySQLHostRegion == "ALL" ]; then
   
   for host in $(echo $array_ALL | sed "s/,/ /g")
@@ -123,7 +134,8 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
         sed -i '/^\s*--/ d' ${scriptDirectory}/${scriptFile}
         
         AlterCommand=$(cat ${scriptDirectory}/$scriptFile)
-
+        savedCreateDatabaseTableCommand=""
+        savedFullCreateDatabaseTableCommand=""
         echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Changes will be done on region: $MySQLHostRegion, host: $MySQLHostIP, Dry Run: $dryRun"
         # Command Splitter #
         AlterCommand=$(echo $AlterCommand | sed "s/';'/'|'/g" | sed "s/';;'/'||'/g" | sed "s/';;;'/'|||'/g") # Remove ';' incase DEFAULT ';' to not be caunted as multi-command delimiter 
@@ -158,7 +170,7 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
               sudo chmod +x $scriptDIR/OnlineSchemaChangerRemote.sh
               sudo scp -o "StrictHostKeyChecking no" $base_dir/OnlineSchemaChangerRemote.sh root@$MySQLHostIP:$base_dir 
 
-              #     # Execute remotely #
+              # Execute remotely #
               ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP $base_dir/OnlineSchemaChangerRemote.sh
             else  # Regular commands
               fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop} | sed "s|'|\"|g" | sed "s/\`//g");
@@ -177,35 +189,55 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
                 fi
 
                 # Special section for call procedures commands ==> just expose the command #
-                if [[ ! $(echo $fixedCommand | awk '{print $1}') == "call" && ! $(echo $fixedCommand | awk '{print $1}') == "CALL" ]]; then 
-                  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
-                else 
+                #if [[ ! $(echo $fixedCommand | awk '{print $1}') == "call" && ! $(echo $fixedCommand | awk '{print $1}') == "CALL" ]]; then 
+                #  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+                #else 
+                #  fixedCommand="SELECT 'CALL db_manager.make_partitioned_by_instance' as command;"  
+                #fi  
+
+                # CALL procedures section #  
+                if [[ $(echo $fixedCommand | awk '{print $1}') == "call" || $(echo $fixedCommand | awk '{print $1}') == "CALL" ]]; then
                   fixedCommand="SELECT 'CALL db_manager.make_partitioned_by_instance' as command;"  
                 fi  
                 
+                # CREATE TABLE section #
                 if [[ $(echo $fixedCommand | awk '{print $1}') == "CREATE" && $(echo $fixedCommand | awk '{print $2}') == "TABLE" ]]; then
+                  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+                  fixedCommand=$(echo $fixedCommand | sed "s/CREATE TABLE /CREATE TABLE IF NOT EXISTS /g");
                   dropCommand=$(echo $dropCommand "DROP TABLE IF EXISTS temp.${AlterTable};");
-                fi  
+                  savedCreateDatabaseTableCommand="temp.${AlterTable}"
+                  savedFullCreateDatabaseTableCommand=$fixedCommand
+                fi
+
+                # INSERT INTO section #
+                if [[ $(echo $fixedCommand | awk '{print $1}') == "INSERT" && $(echo $fixedCommand | awk '{print $2}') == "INTO" && $(echo $fixedCommand | awk '{print $3}') == "$Database.$AlterTable" ]]; then
+                  if [ $savedCreateDatabaseTableCommand == "temp.$AlterTable" ]; then 
+                    mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$savedFullCreateDatabaseTableCommand" 2>&1 | grep -v mysql:       
+                  else
+                    updateCommand="CREATE TABLE IF NOT EXISTS temp.$AlterTable LIKE $Database.$AlterTable;"
+                  fi
+                  dropCommand=$(echo $dropCommand "DROP TABLE IF EXISTS temp.${AlterTable};");
+                  mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$updateCommand" 2>&1 | grep -v mysql: 
+                  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+                fi    
 
               fi
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Run command $fixedCommand"
-              mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$fixedCommand" 2>&1 | grep -v mysql:  
+              mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$fixedCommand" 2>&1 | grep -v mysql: 
             fi  
 
             ((loop++))
 
           done
-
-        # Clean object in case of DRY run #
-        if  [ $(echo ${#dropCommand}) -gt 0 ]; then
-          echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Clean tables after dry run - ${dropCommand}\n"
-          mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$dropCommand" 2>&1 | grep -v mysql:
-          dropCommand=""
-        fi    
+          # Clean object in case of DRY run #
+          if  [ $(echo ${#dropCommand}) -gt 0 ]; then
+            echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Clean tables after dry run - ${dropCommand}\n"
+            mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$dropCommand" 2>&1 | grep -v mysql:   
+            dropCommand=""  
+          fi    
 
       done 
   done       
-  
 
 
 
