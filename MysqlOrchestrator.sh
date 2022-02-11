@@ -138,7 +138,7 @@ for i in "${!mysqlArray[@]}"
                 fi         
 
                 if [[ $Slave_IO_Running == "Yes" && $Slave_SQL_Running == "Yes" && $Seconds_Behind_Master -gt $maxSlaveLag ]]; then
-                    message="$(date +%Y-%m-%d" "%H:%M:%S) [WARNING] Replication lag of $Seconds_Behind_Master on $mysqlHostResolved IP:$mysqlHost."
+                    message="$(date +%Y-%m-%d" "%H:%M:%S) [WARNING] Replication lag on $mysqlHostResolved IP:$mysqlHost is $Seconds_Behind_Master"
                     echo "$message" >> $logFile
                     sendToSlack "$message"
                     sendToTelegram "$message"           
@@ -155,7 +155,7 @@ for i in "${!mysqlArray[@]}"
                         command="set global innodb_flush_log_at_trx_commit = 2;" 
                         mysql -u root -proot -h $mysqlHost -e"$command" 2>&1 | grep -v mysql:
                     fi    
-                elif [[ $Slave_IO_Running == "Yes" && $Slave_SQL_Running == "Yes"  && $Seconds_Behind_Master -le 10 ]]; then # send slave lag value on log file    
+                elif [[ $Slave_IO_Running == "Yes" && $Slave_SQL_Running == "Yes"  && $Seconds_Behind_Master -le $minSlaveLag ]]; then # send slave lag value on log file    
                     # Proactive change on replica lag #
                     currVal=$(mysql -N -s -u root -proot -h $mysqlHost -e"show variables where variable_name = 'innodb_flush_log_at_trx_commit'" 2>&1 | grep -v mysql: | awk '{print $2}')
                     if [ $currVal -ne 1 ]; then
