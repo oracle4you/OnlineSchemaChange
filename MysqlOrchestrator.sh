@@ -12,11 +12,11 @@
 # 1.9  : Added check for master machines too
 # 1.10 : Internal hostname resolver
 # set -x
-mysqlArray=(10.54.0.8 10.54.0.4 10.54.0.5 10.56.0.4 10.50.0.4 10.50.0.5 10.50.0.12 10.52.0.4)
-mysqlResolved=(PROD-US1-DB06 PROD-US1-DB03 PROD-US1-DB04 PROD-US2-DB01 PROD-EU1-DB03 PROD-EU1-DB04 PROD-EU1-DB06 PROD-EU2-DB02)
+mysqlArray=(1.1.1.1 2.2.2.2 3.3.3.3 4.4.4.4)
+mysqlResolved=(US1-DB06 US1-DB03 US1-DB04 US2-DB01 EU1-DB03 EU1-DB04 EU1-DB06 EU2-DB02)
 
-maxscaleArray=(10.54.0.11 10.54.0.12 10.50.0.7 10.50.0.8)
-maxscaleResolved=(PROD-US1-MAXSCALE01 PROD-US1-MAXSCALE02 PROD-EU1-MAXSCALE01 PROD-EU1-MAXSCALE02)
+maxscaleArray=(5.5.5.5 6.6.6.6 7.7.7.7 8.8.8.8)
+maxscaleResolved=(US1-MAXSCALE01 US1-MAXSCALE02 EU1-MAXSCALE01 EU1-MAXSCALE02)
 
 logFile="/var/log/MysqlOrchestrator.log"
 # Log rotator every monday #
@@ -57,15 +57,15 @@ fi
 
 # Functions #
 sendToSlack() {
-sURL="https://hooks.slack.com/services/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"
+sURL="${slackWebhook}"
 json="{\"text\": \"$1\"}"
 runCURL="curl -s -X POST -H 'Content-type: application/json' --data  '$json' $sURL"
 eval $runCURL > /dev/null
 }
 
 sendToTelegram() {
-tToken="2030224278:AAGKxRubbjOoIHe93qC-Wq_FX3DbOxbyb0E"
-tID=147547052
+tToken="${telegramToken}"
+tID=${telgramID}
 tURL="https://api.telegram.org/bot$tToken/sendMessage"
 curl -s -X POST $tURL -d chat_id=$tID -d text="$1" > /dev/null
 }
