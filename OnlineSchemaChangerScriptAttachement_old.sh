@@ -9,10 +9,11 @@ replicaLag=$7
 scriptFilesArray=$8
 array_EU="10.50.0.4,10.50.0.5,10.50.0.12"
 array_US="10.54.0.4,10.54.0.5,10.54.0.8"
+array_STAGE_CONSOLIDATED="10.70.1.7,10.70.1.4"
 array_ALL="$array_EU,$array_US"
 scriptDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 base_dir="/home/cpq"
-
+#set -x
 
 
 # Links #
@@ -56,10 +57,20 @@ elif [ $MySQLHostRegion == "US" ]; then
       if [ $aa -gt 0 ]; then
         break
       else
-        host="10.54.0.8"  
-      fi
-      
+        host=""  
+      fi    
     done
+elif [ $MySQLHostRegion == "STAGE-CONSOLIDATED" ]; then
+  for host in $(echo $array_STAGE_CONSOLIDATED | sed "s/,/ /g")
+    do
+      aa=$(mysql -N -s -u$UserName -p$Password -h $host -e"show slave hosts" 2>&1 | grep -v mysql: | wc -l)
+      if [ $aa -gt 0 ]; then
+        break
+      else
+        host=""  
+      fi    
+    done
+
 elif [ $MySQLHostRegion == "ALL" ]; then
   
   for host in $(echo $array_ALL | sed "s/,/ /g")
@@ -112,46 +123,29 @@ for scriptFile in $(echo $scriptFilesArray | sed "s/,/ /g")
     fi  
   done
 
-# Install dos2unix if needed
-dos2unixInstalled=$(which dos2unix | wc -l)
-if [ $dos2unixInstalled -eq 0 ]; then
-    echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] dos2unix package is not installed... installing dos2unix packages"
-    apt install dos2unix -y
-fi    
-
-
 # Start working on array of hosts #
 for MySQLHostIP in $(echo $MySQLHostIPArray)
   do
     # Start working on (for each file of picked host) #
-    perconaInstalled=$(ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP which pt-online-schema-change | wc -l)
-    if  [ $perconaInstalled -eq 0 ]; then
-      echo "$(date +%Y-%m-%d" "%H:%M:%S) [ERROR] Percona online schema change package not installed on destination host $MySQLHostIP. Process will be stopped"
-      break
-      exit 1
-    fi
-
     for scriptFile in $(echo $scriptFilesArray | sed "s/,/ /g")
       do
-        dos2unix ${scriptDirectory}/${scriptFile} 2> /dev/null
-        # Clean remarked lines #       
+        # Clean remarked lines #
         sed -i '/^\//d' ${scriptDirectory}/${scriptFile}
         sed -i '/^\s*--/ d' ${scriptDirectory}/${scriptFile}
         
         AlterCommand=$(cat ${scriptDirectory}/$scriptFile)
-
+        savedCreateDatabaseTableCommand=""
+        savedFullCreateDatabaseTableCommand=""
         echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Changes will be done on region: $MySQLHostRegion, host: $MySQLHostIP, Dry Run: $dryRun"
-        echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Run script $scriptFile"
         # Command Splitter #
         AlterCommand=$(echo $AlterCommand | sed "s/';'/'|'/g" | sed "s/';;'/'||'/g" | sed "s/';;;'/'|||'/g") # Remove ';' incase DEFAULT ';' to not be caunted as multi-command delimiter 
-        AlterCommand=$(echo $AlterCommand | sed "s/alter/ALTER/g" | sed "s/ table / TABLE /g")
         loopIds=$(echo $AlterCommand | grep -o ";" | wc -l)
         loop=1
         echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start splitting SQL command"
         while [ $loop -le $(($loopIds+1)) ]; 
           do
             fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop})
-            if [[ $(echo $fixedCommand | awk '{print $1}' | tr '[:lower:]' '[:upper:]') == "ALTER" && $(echo $fixedCommand | awk '{print $2}' | tr '[:lower:]' '[:upper:]') == "TABLE" ]]; then
+            if [[ $(echo $fixedCommand | awk '{print $1}') == "ALTER" && $(echo $fixedCommand | awk '{print $2}') == "TABLE" ]]; then
               fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop} | sed "s/ALTER TABLE//g" | sed "s/alter table//g" | sed "s|'|\"|g" | sed "s/\`//g");
               Database=$(echo $fixedCommand | cut -d'.' -f 1)
               AlterTable=$(echo $fixedCommand | cut -d'.' -f 2 | awk '{print $1}')
@@ -162,75 +156,94 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
               critical_load="Threads_running=1000"
               command="pt-online-schema-change --alter '$fixedCommand' D=$Database,t=$AlterTable --host $MySQLHostIP --user $UserName  --password $Password \
               --alter-foreign-keys-method auto  --max-load Threads_running=150 --critical-load Threads_running=300 $replicationProperties \
-              --chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
+              --chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0  $execute"
                 
               # Generate remote file and call if DB & table != "empty"#
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Prompted command number [$loop] is: ALTER TABLE $fixedCommand"
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start changing objects on DB: $Database" 
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start changing table ${AlterTable} structure"
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Sent command to interpreter: $fixedCommand"
-              echo "thisTime=timeNow" > $base_dir/OnlineSchemaChangerRemote.txt
-              echo "echo \"[INFO] Remote command started at AAA\"" >> $base_dir/OnlineSchemaChangerRemote.txt 
-              echo $command >> $base_dir/OnlineSchemaChangerRemote.txt
-              echo "thisTime=timeNow" >> $base_dir/OnlineSchemaChangerRemote.txt
-              echo "echo \"[INFO] Remote command finished at AAA\"" >> $base_dir/OnlineSchemaChangerRemote.txt
+
+              echo $command > $base_dir/OnlineSchemaChangerRemote.txt
               mv $base_dir/OnlineSchemaChangerRemote.txt $base_dir/OnlineSchemaChangerRemote.sh
               sed -i '1s/^/#!\/bin\/bash\n /' $base_dir/OnlineSchemaChangerRemote.sh
-              sed -i 's/timeNow/$(date +%Y-%m-%d" "%H:%M:%S)/g' $base_dir/OnlineSchemaChangerRemote.sh
-              sed -i 's/AAA/$thisTime/g' $base_dir/OnlineSchemaChangerRemote.sh
               sudo chmod +x $scriptDIR/OnlineSchemaChangerRemote.sh
               sudo scp -o "StrictHostKeyChecking no" $base_dir/OnlineSchemaChangerRemote.sh root@$MySQLHostIP:$base_dir 
 
               # Execute remotely #
-              ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP $base_dir/OnlineSchemaChangerRemote.sh
+              #ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP $base_dir/OnlineSchemaChangerRemote.sh
             else  # Regular commands
               fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop} | sed "s|'|\"|g" | sed "s/\`//g");
               Database=$(echo $fixedCommand | cut -d "." -f 1 | awk '{print $NF}')
 
               AlterTable=$(echo $fixedCommand | cut -d'.' -f 2 | awk '{print $1}');
               fixedCommand=$(echo $fixedCommand | sed "s/|/;/g" | sed "s/||/;;/g" | sed "s/|||/;;;/g");
+              # Write to temp db in case of DRY RUN #
+              if [ $dryRun == "Yes" ]; then
+                # Special section for UPDATE SET commands ==> create temp table for DY RUN #
+                if [[ $(echo $fixedCommand | awk '{print $1}') == "UPDATE" && $(echo $fixedCommand | awk '{print $2}') == "$Database.$AlterTable" ]]; then
+                  updateCommand="CREATE TABLE IF NOT EXISTS temp.$AlterTable LIKE $Database.$AlterTable;"
+                  dropCommand="DROP TABLE IF EXISTS temp.$AlterTable;"
+                  mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$updateCommand" 2>&1 | grep -v mysql:  
+                fi
 
-              if [ $dryRun == 'Yes' ]; then # Part of regular commands in dry run #
-                # CREATE TABLE #
+                # Special section for call procedures commands ==> just expose the command #
+                #if [[ ! $(echo $fixedCommand | awk '{print $1}') == "call" && ! $(echo $fixedCommand | awk '{print $1}') == "CALL" ]]; then 
+                #  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+                #else 
+                #  fixedCommand="SELECT 'CALL db_manager.make_partitioned_by_instance' as command;"  
+                #fi  
+
+                # CALL procedures section #  
+                if [[ $(echo $fixedCommand | awk '{print $1}') == "call" || $(echo $fixedCommand | awk '{print $1}') == "CALL" ]]; then
+                  fixedCommand="SELECT 'CALL db_manager.make_partitioned_by_instance' as command;"  
+                fi  
+                
+                # CREATE TABLE section #
                 if [[ $(echo $fixedCommand | awk '{print $1}') == "CREATE" && $(echo $fixedCommand | awk '{print $2}') == "TABLE" ]]; then
-                  command="SELECT COUNT(1) FROM information_schema.tables where table_schema='$Database' AND table_name='$AlterTable';"
-                  tableExists=$(mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$command" 2>&1 | grep -v mysql:)
-                  if [ $tableExists -gt 0 ]; then
-                    echo "$(date +%Y-%m-%d" "%H:%M:%S) [ERROR] Table $Database.$AlterTable exists and can't be created twice. Process will stop."
-                    exit 1
+                  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+                  fixedCommand=$(echo $fixedCommand | sed "s/CREATE TABLE /CREATE TABLE IF NOT EXISTS /g");
+                  dropCommand=$(echo $dropCommand "DROP TABLE IF EXISTS temp.${AlterTable};");
+                  savedCreateDatabaseTableCommand="temp.${AlterTable}"
+                  savedFullCreateDatabaseTableCommand=$fixedCommand
+                fi
+
+                # INSERT INTO section #
+                if [[ $(echo $fixedCommand | awk '{print $1}') == "INSERT" && $(echo $fixedCommand | awk '{print $2}') == "INTO" && $(echo $fixedCommand | awk '{print $3}') == "$Database.$AlterTable" ]]; then
+                  if [ $savedCreateDatabaseTableCommand == "temp.$AlterTable" ]; then 
+                    mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$savedFullCreateDatabaseTableCommand" 2>&1 | grep -v mysql:       
+                  else
+                    updateCommand="CREATE TABLE IF NOT EXISTS temp.$AlterTable LIKE $Database.$AlterTable;"
+                    echo $updateCommand
+                    exit
                   fi
-                fi
+                  dropCommand=$(echo $dropCommand "DROP TABLE IF EXISTS temp.${AlterTable};");
+                  mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$updateCommand" 2>&1 | grep -v mysql: 
+                  fixedCommand=$(echo $fixedCommand | sed "s/${Database}./temp./g");
+                fi    
 
-                # DROP TABLE #
-                if [[ $(echo $fixedCommand | awk '{print $1}') == "DROP" && $(echo $fixedCommand | awk '{print $2}') == "TABLE" ]]; then                
-                  command="SELECT COUNT(1) FROM information_schema.tables where table_schema='$Database' AND table_name='$AlterTable';"
-                  tableExists=$(mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$command" 2>&1 | grep -v mysql:)
-                  if [ $tableExists -eq 0 ]; then
-                    echo "$(date +%Y-%m-%d" "%H:%M:%S) [ERROR] Table $Database.$AlterTable doesn't exists and can't be dropped. Process will stop."
-                    exit 1
-                  fi  
-                fi
-              fi # [ $dryRun == 'Yes' ]
-
-              if [ $(echo ${#fixedCommand}) -gt 1 ]; then
+              fi
+              if [ $(echo ${#fixedCommand}) -gt 0 ]; then
                 echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Run command $fixedCommand"
-              fi
-
-              if [ $dryRun == "No" ]; then             
-                mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$fixedCommand" 2>&1 | grep -v mysql:  
-              fi
+                #mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$fixedCommand" 2>&1 | grep -v mysql: 
+                echo "mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$fixedCommand" 2>&1 | grep -v mysql: " >> /home/cpq/commands.txt
+              fi  
             fi  
 
             ((loop++))
 
           done
+          # Clean object in case of DRY run #
+          if  [ $(echo ${#dropCommand}) -gt 0 ]; then
+            echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Clean tables after dry run - ${dropCommand}\n"
+            mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$dropCommand" 2>&1 | grep -v mysql:   
+            dropCommand=""  
+          fi    
 
-        # Clean object in case of DRY run #
-        if  [ $(echo ${#dropCommand}) -gt 0 ]; then
-          echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Clean tables after dry run - ${dropCommand}\n"
-          mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$dropCommand" 2>&1 | grep -v mysql:
-          dropCommand=""
-        fi    
-        echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Run script $scriptFile finished\n"
       done 
-  done
+  done       
+
+
+
+
+

@@ -1,0 +1,10 @@
+cnf_minSlaveLag=10
+cnf_maxSlaveLag=3600
+cnf_sendToTelegram=0
+cnf_sendToSlack=1
+cnf_MaxScaleCheck=1
+cnf_MySQLCheck=1
+cnf_MySQLSlaves=3
+cnf_MaxScalePpenPorts=8989
+cnf_MySqlRouterCheck=1
+cnf_MySqlRouterOpenPorts=3306

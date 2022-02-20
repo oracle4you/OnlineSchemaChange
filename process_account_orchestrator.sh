@@ -12,11 +12,12 @@ s_region=$1
 d_region=$2
 account=$3
 disableOnSource=$4
-array_EU="1.1.1.1,2.2.2.2,3.3.3.3"
-array_US="11.11.11.11,22.22.22.22,33.33.33.33"
-array_TS="11.11.11.11"
-array_STAGE_US="22.22.22.22"
-array_STAGE_EU="33.33.33.33"
+rewriteInDestination=$5
+array_EU="10.50.0.5,10.50.0.12,10.50.0.4" # EU Hosts - On this list first slaves and first between slaves is non snapshoted
+array_US="10.54.0.5,10.54.0.4,10.54.0.8"  # US Hosts - On this list first slaves and first between slaves is non snapshoted
+array_TS="10.70.1.6"
+array_STAGE_US="10.102.2.4"
+array_STAGE_EU="10.101.2.4"
 base_dir="/home/cpq"
 dbUserName="root"
 dbPassword="root"
@@ -77,7 +78,9 @@ elif  [ $s_region == "US" ]; then
 elif [ $s_region == "STAGE-US" ]; then
   s_host=$array_STAGE_US
 elif [ $s_region == "STAGE-EU" ]; then
-  s_host=$array_STAGE_EU       
+  s_host=$array_STAGE_EU
+elif [ $s_region == "TS" ]; then
+  s_host=$array_TS         
 fi
 m_s_host=$s_host
 #mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
@@ -116,6 +119,7 @@ if [ $account_exists_source -eq 0 ]; then
 fi
 
 
+
 # Find destiation --> write to master !!! #
 if [ $d_region == "EU" ]; then
   for d_host in $(echo $array_EU | sed "s/,/ /g")
@@ -144,18 +148,24 @@ fi
 echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found master for region $d_region $d_host"
 
 # Sync procedures on source --> write to master or TS as stand alone #
-#mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
+mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
 
 
 # Sync procedures on destination --> write to master or TS as stand alone #
-#mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
+mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
 
 # Check if account exists on destination #
 account_exists_dest=$(mysql -N -s -uroot -proot -h $d_host -e"select count(1) from db_manager.accounts_partitions where account_name='$account'" 2>&1 | grep -v mysql:)
-if [ $account_exists_dest -ne 0 ]; then
+if [[ $account_exists_dest -ne 0 && $rewriteInDestination == "N" ]]; then
   echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Account with same name exists on destination $d_region region ${NOC}"
   exit 1
+elif [[ $account_exists_dest -eq 0 && $rewriteInDestination == "Y" ]]; then
+  echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] System can't do rewrite if account does not exsists on destination $d_region region ${NOC}"
+  exit 1
 fi
+
+
+
 
 # Compare number of partitions #
 count_part_sour=$(mysql -N -s -u$dbUserName -p$dbPassword -h $s_host -e"select count(1) from db_manager.partitions_by_instance where skip_table=0" 2>&1 | grep -v mysql:)
@@ -163,7 +173,7 @@ partTables_source=$(mysql -N -s -u$dbUserName -p$dbPassword -h $s_host -e"select
 
 count_part_dest=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"select count(1) from db_manager.partitions_by_instance where skip_table=0" 2>&1 | grep -v mysql:)
 partTables_dest=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"select concat(schema_name,'.',table_name) from db_manager.partitions_by_instance where skip_table=0" 2>&1 >  $base_dir/dest.txt | grep -v mysql:)
-if [ $count_part_sour -ne $count_part_dest ]; then
+if [ $count_part_sour -gt $count_part_dest ]; then
   #thisDiff=$(diff $base_dir/source.txt $base_dir/dest.txt)
   thisDiff=$(comm -3 $base_dir/source.txt $base_dir/dest.txt | sed 's/^\t//')
   missingTables=$(echo $thisDiff)
@@ -195,7 +205,7 @@ if [ -f $base_dir/${account}.zip ]; then
   echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start transfer ${account} data to destination region $d_region on host $d_host"
   sudo scp -o "StrictHostKeyChecking no" $base_dir/${account}.* root@${d_host}:$destination_storage_dir/
   echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Transfer of ${account} data to destination region $d_region on host $d_host finished"
-  ssh -o "StrictHostKeyChecking no" root@$d_host $base_dir/process_account_import.sh $account $destination_storage_dir
+  ssh -o "StrictHostKeyChecking no" root@$d_host $base_dir/process_account_import.sh $account $destination_storage_dir $rewriteInDestination
 
   # Write to log table log messages - source #
   sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, cfac_id=${cfac_id} transfered to ${d_host} ${d_region}');"

@@ -5,7 +5,8 @@
 
 account=$1
 destination_storage_dir=$2
-path=$3
+rewriteInDestination=$3
+path=$4
 base_dir="/home/cpq"
 dbUserName="root"
 dbPassword="root"
@@ -62,14 +63,16 @@ if [[ $reorgRoutineExists -eq 0 ]]; then
   exit 1
 fi  
 
-if [ -f ${destination_storage_dir}/${account}.sh ]; then
-  #chmod +x $base_dir/${account}.sh
-  echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start reorganizing partitions on the DB."
-  ${destination_storage_dir}/${account}.sh
-else
-   echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Missig file $account.sh. Process stopped!!!${NOC}" 
-   exit 1
-fi   
+if [ $rewriteInDestination == "N" ]; then
+  if [ -f ${destination_storage_dir}/${account}.sh ]; then
+    #chmod +x $base_dir/${account}.sh
+    echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start reorganizing partitions on the DB."
+    ${destination_storage_dir}/${account}.sh
+  else
+    echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Missig file $account.sh. Process stopped!!!${NOC}" 
+    exit 1
+  fi   
+fi  
 
 for i in  `ls $path/*.sql` ; do
         db=$(getDBName $i | sed "s|$path||g" | sed "s/\///g")

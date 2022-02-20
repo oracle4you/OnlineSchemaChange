@@ -60,9 +60,9 @@ getrecords: LOOP
 
 					 SELECT CONCAT('echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start dump data from ',cur_schema_name,'.',cur_table_name,' table..."');
            IF cur_table_name NOT IN ('iams_in_app_messages','ifdq_deleted_quotes','pbch_playbook_changes','pbms_multi_system_attributes','qcns_quote_changes_notifications','uvrn_release_notes','uvsq_shared_quotes') THEN
-             SELECT CONCAT('mysqldump --insert-ignore --set-gtid-purged=OFF --no-create-info --skip-triggers --single-transaction --skip-add-locks --skip-disable-keys --complete-insert  --databases ',cur_schema_name,' --tables ',cur_table_name,' --where="',IF(cur_table_name='cfac_accounts','',cur_table_preffix),'cfac_id=',@v_cfac_id,'" > ',path,cur_schema_name,'.',cur_table_name,'.sql') AS '';
+             SELECT CONCAT('mysqldump --replace --set-gtid-purged=OFF --no-create-info --skip-triggers --single-transaction --skip-add-locks --skip-disable-keys --complete-insert  --databases ',cur_schema_name,' --tables ',cur_table_name,' --where="',IF(cur_table_name='cfac_accounts','',cur_table_preffix),'cfac_id=',@v_cfac_id,'" > ',path,cur_schema_name,'.',cur_table_name,'.sql') AS '';
            ELSE 
-             SELECT CONCAT('mysqldump --insert-ignore --set-gtid-purged=OFF --no-create-info --skip-triggers --single-transaction --skip-add-locks --skip-disable-keys --complete-insert  --databases ',cur_schema_name,' --tables ',cur_table_name,' --where="',IF(cur_table_name='cfac_accounts','',cur_table_preffix),'guid=',@v_cfac_id,'" > ',path,cur_schema_name,'.',cur_table_name,'.sql') AS '';  
+             SELECT CONCAT('mysqldump --replace --set-gtid-purged=OFF --no-create-info --skip-triggers --single-transaction --skip-add-locks --skip-disable-keys --complete-insert  --databases ',cur_schema_name,' --tables ',cur_table_name,' --where="',IF(cur_table_name='cfac_accounts','',cur_table_preffix),'guid=',@v_cfac_id,'" > ',path,cur_schema_name,'.',cur_table_name,'.sql') AS '';  
            END IF;  
 
 END LOOP;
@@ -70,7 +70,7 @@ END LOOP;
 CLOSE tables_list;
 
 SELECT CONCAT('echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start dump data from db_manager.accounts_partitions"');
-SELECT CONCAT('mysqldump --insert-ignore --set-gtid-purged=OFF --no-create-info --skip-triggers --single-transaction --skip-add-locks --skip-disable-keys --complete-insert  --databases db_manager --tables accounts_partitions --where="account_name=''',@v_account_name,''' and partition_id=',@v_partition_id,'" > ',path,'db_manager.accounts_partitions.sql') AS '';
+SELECT CONCAT('mysqldump --replace --set-gtid-purged=OFF --no-create-info --skip-triggers --single-transaction --skip-add-locks --skip-disable-keys --complete-insert  --databases db_manager --tables accounts_partitions --where="account_name=''',@v_account_name,''' and partition_id=',@v_partition_id,'" > ',path,'db_manager.accounts_partitions.sql') AS '';
 
 END */$$
 DELIMITER ;

@@ -12,11 +12,11 @@
 # 1.9  : Added check for master machines too
 # 1.10 : Internal hostname resolver
 # set -x
-mysqlArray=(1.1.1.1 2.2.2.2 3.3.3.3 4.4.4.4)
-mysqlResolved=(US1-DB06 US1-DB03 US1-DB04 US2-DB01 EU1-DB03 EU1-DB04 EU1-DB06 EU2-DB02)
+mysqlArray=($arrayIPsMySQL)
+mysqlResolved=($arrayHostNamesMySQL)
 
-maxscaleArray=(5.5.5.5 6.6.6.6 7.7.7.7 8.8.8.8)
-maxscaleResolved=(US1-MAXSCALE01 US1-MAXSCALE02 EU1-MAXSCALE01 EU1-MAXSCALE02)
+maxscaleArray=($arrayIPsMaxScales)
+maxscaleResolved=($arrayHostNamesMaxScales)
 
 logFile="/var/log/MysqlOrchestrator.log"
 # Log rotator every monday #
@@ -57,16 +57,16 @@ fi
 
 # Functions #
 sendToSlack() {
-sURL="${slackWebhook}"
+sURL="$slackWebhook"
 json="{\"text\": \"$1\"}"
 runCURL="curl -s -X POST -H 'Content-type: application/json' --data  '$json' $sURL"
 eval $runCURL > /dev/null
 }
 
 sendToTelegram() {
-tToken="${telegramToken}"
-tID=${telgramID}
-tURL="https://api.telegram.org/bot$tToken/sendMessage"
+tToken="$tToken"
+tID=147547052
+tURL="$tUrl"
 curl -s -X POST $tURL -d chat_id=$tID -d text="$1" > /dev/null
 }
 
@@ -101,23 +101,32 @@ fi
 
 for i in "${!mysqlArray[@]}"
     do
+        if [[ $i -eq 0 || $i -eq 4 ]]; then
+            j="master"
+        else
+            j="slave"
+        fi        
         mysqlHost=${mysqlArray[$i]}
         mysqlHostResolved=${mysqlResolved[$i]}
-        echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Checking mysql host $mysqlHostResolved IP:$mysqlHost"
-        echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Checking mysql host $mysqlHostResolved IP:$mysqlHost" >> $logFile
+        echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Checking mysql host $mysqlHostResolved ($j) IP:$mysqlHost"
+        echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Checking mysql host $mysqlHostResolved ($j) IP:$mysqlHost" >> $logFile
         # Check if mysql is up
         if [ $checkMySQL -eq 1 ]; then
             nc -zv $mysqlHost 3306 2> /dev/null
             if [ $? -ne 0 ]; then
-                message="$(date +%Y-%m-%d" "%H:%M:%S) [ERROR] MySQL port on host $mysqlHostResolved IP:$mysqlHost not responding. MySQL service is down or in backup process."
+                if [[ $i -eq 0 || $i -eq 4 ]]; then # different message for down master and slave
+                    message="$(date +%Y-%m-%d" "%H:%M:%S) [ERROR] MySQL port on host $mysqlHostResolved ($j) IP:$mysqlHost not responding. This is master and immediate intervention needed."
+                else
+                    message="$(date +%Y-%m-%d" "%H:%M:%S) [WARNING] MySQL port on host $mysqlHostResolved ($j) IP:$mysqlHost not responding. MySQL service is down or in backup process."
+                fi                
                 echo "$message" >> $logFile
-                if [[ $sendToSlack -eq 1 || $i -eq 1 || $i -eq 5 ]]; then # for master US [i]=1 or master EU [i]=5 do aletr
+                if [[ $sendToSlack -eq 1 || $i -eq 0 || $i -eq 4 ]]; then # for master US [i]=0 or master EU [i]=4 do aletr
                     sendToSlack "$message"
                 fi
-                if [ $sendToTelegram -eq 1 || $i -eq 1 || $i -eq 5 ]; then # for master US [i]=1 or master EU [i]=5 do aletrtail -f 
+                if [[ $sendToTelegram -eq 1 || $i -eq 0 || $i -eq 4 ]]; then # for master US [i]=0 or master EU [i]=4 do aletrtail -f 
                     sendToTelegram "$message"
                 fi    
-                break 
+                continue 
             fi
 
             isMaster=$(mysql -N -s -u root -proot -h $mysqlHost -e"show slave hosts"  2>&1 | grep -v mysql: | wc -l);      
@@ -127,7 +136,7 @@ for i in "${!mysqlArray[@]}"
                 Seconds_Behind_Master=$(mysql -u root -proot -h  $mysqlHost -e"SHOW SLAVE STATUS \G" 2>&1 | grep -v mysql: | grep Seconds_Behind_Master: | awk '{print $2}')
 
                 if [[ ( $Slave_IO_Running != "Yes" || $Slave_SQL_Running != "Yes" ) ]]; then
-                    message="$(date +%Y-%m-%d" "%H:%M:%S) [WARNING] Check replica on $mysqlHostResolved IP:$mysqlHost. Replication Slave_SQL_Running=$Slave_IO_Running, Slave_SQL_Running=$Slave_SQL_Running."
+                    message="$(date +%Y-%m-%d" "%H:%M:%S) [WARNING] Check replica on $mysqlHostResolved ($j) IP:$mysqlHost. Replication Slave_SQL_Running=$Slave_IO_Running, Slave_SQL_Running=$Slave_SQL_Running."
                     echo "$message" >> $logFile
                     if [ $sendToSlack -eq 1 ]; then
                         sendToSlack "$message"
@@ -138,12 +147,12 @@ for i in "${!mysqlArray[@]}"
                 fi         
 
                 if [[ $Slave_IO_Running == "Yes" && $Slave_SQL_Running == "Yes" && $Seconds_Behind_Master -gt $maxSlaveLag ]]; then
-                    message="$(date +%Y-%m-%d" "%H:%M:%S) [WARNING] Replication lag on $mysqlHostResolved IP:$mysqlHost is $Seconds_Behind_Master"
+                    message="$(date +%Y-%m-%d" "%H:%M:%S) [WARNING] Replication lag on $mysqlHostResolved ($j) IP:$mysqlHost is $Seconds_Behind_Master"
                     echo "$message" >> $logFile
-                    sendToSlack "$message"
-                    sendToTelegram "$message"           
+                    #sendToSlack "$message"
+                    #sendToTelegram "$message"           
                 elif [[ $Slave_IO_Running == "Yes" && $Slave_SQL_Running == "Yes"  && $Seconds_Behind_Master -eq $Seconds_Behind_Master ]]; then # send slave lag value on log file
-                    message="$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Replication lag on $mysqlHostResolved IP:$mysqlHost is $Seconds_Behind_Master"
+                    message="$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Replication lag on $mysqlHostResolved ($j) IP:$mysqlHost is $Seconds_Behind_Master"
                     echo "$message" >> $logFile    
                 fi
 
@@ -217,7 +226,7 @@ for i in "${!maxscaleArray[@]}"
 
     done
 
-#message="[INFO] Last check at $(date +%Y-%m-%d" "%H:%M:%S) UTC"
+#message="[INFO] Test Last check at $(date +%Y-%m-%d" "%H:%M:%S) UTC"
 #if [ $sendToSlack -eq 1 ]; then
 #    sendToSlack "$message"
 #fi
