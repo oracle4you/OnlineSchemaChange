@@ -13,6 +13,7 @@ d_region=$2
 account=$3
 disableOnSource=$4
 rewriteInDestination=$5
+impersonateEmails=$6
 array_EU="10.50.0.5,10.50.0.12,10.50.0.4" # EU Hosts - On this list first slaves and first between slaves is non snapshoted
 array_US="10.54.0.5,10.54.0.4,10.54.0.8"  # US Hosts - On this list first slaves and first between slaves is non snapshoted
 array_TS="10.70.1.6"
@@ -227,5 +228,33 @@ if [ $disableOnSource == "Y" ]; then
   mysql -N -s -uroot -proot -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
   echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Status of cfac_id=$cfac_id account ${account} partition removed on configuration.cfac_accounts"
 fi  
+
+# Impersonate emails #
+if [ $impersonateEmails == "Y" ]; then
+  # ToDo ==> Ask Alon if we need to remove record from `db_manager`.`accounts_partitions`
+  sqlStatement="UPDATE configuration.cfus_users set cfus_email = 'valooto.lockwait@gmail.com';"
+  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+  sqlStatement="UPDATE configuration.cfco_contacts set cfco_email=concat(cfco_email, '_stage') WHERE cfco_email is not null AND cfco_email != '' AND cfco_email NOT LIKE '%s_stage%s';"
+  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+  sqlStatement="UPDATE dealhub.dhus_users set dhus_email=concat(dhus_email, '_stage') WHERE dhus_email is not null AND dhus_email != '' AND dhus_email NOT LIKE '%s_stage%s';"
+  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+  sqlStatement="UPDATE dealhub.guus_guest_users set guus_email=concat(guus_email, '_stage') WHERE guus_email is not null AND guus_email != '' AND guus_email NOT LIKE '%s_stage%s';"
+  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+  sqlStatement="UPDATE configuration.cfus_users set cfus_password ='\$2a\$12\$jwx4jHFMm/LcWYuiBALO2uM3mkbLq5HISt17cpm3YRs2J/EZ.5IKa';"
+  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+  sqlStatement="UPDATE configuration.cfss_server_settings SET cfss_value= '' WHERE cfss_key='webhook.auth.key';"
+  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+  sqlStatement="TRUNCATE TABLE openapi.webhook_events; TRUNCATE TABLE openapi.webhooks;"
+  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+  echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] email data impersonated."
+fi  
+
 
 

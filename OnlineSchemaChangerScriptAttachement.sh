@@ -35,7 +35,7 @@ elif [ $MySQLHostRegion == "STAGE-US-DB01" ]; then
 elif [ $MySQLHostRegion == "STAGE-CPQ" ]; then
   host="10.101.2.10"
 elif [ $MySQLHostRegion == "TEST" ]; then
-  host="10.70.1.9"
+  host="10.70.1.8"
 elif [ $MySQLHostRegion == "API-DB" ]; then
   host="10.66.0.20"
 
@@ -56,7 +56,7 @@ elif [ $MySQLHostRegion == "US" ]; then
       if [ $aa -gt 0 ]; then
         break
       else
-        host="10.54.0.8"  
+        host=""  
       fi
       
     done
@@ -150,9 +150,23 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
         echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start splitting SQL command"
         while [ $loop -le $(($loopIds+1)) ]; 
           do
+            isIndex=0
             fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop})
+            # CREATE INDEX ==> ALTER TABLE ADD KEY
+            if [[ $(echo $fixedCommand | awk '{print $1}' | tr '[:lower:]' '[:upper:]') == "CREATE" && $(echo $fixedCommand | awk '{print $2}' | tr '[:lower:]' '[:upper:]') == "INDEX" ]]; then  
+              indexName=$(echo $fixedCommand | awk '{print $3}')
+              objectName=$(echo $fixedCommand | awk '{print $5}')
+              indexProperty=$(echo $fixedCommand | cut -d "(" -f 2)
+              fixedCommand="ALTER TABLE $objectName ADD KEY $indexName ($indexProperty"
+              isIndex=1
+            fi
+
             if [[ $(echo $fixedCommand | awk '{print $1}' | tr '[:lower:]' '[:upper:]') == "ALTER" && $(echo $fixedCommand | awk '{print $2}' | tr '[:lower:]' '[:upper:]') == "TABLE" ]]; then
-              fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop} | sed "s/ALTER TABLE//g" | sed "s/alter table//g" | sed "s|'|\"|g" | sed "s/\`//g");
+              if [ $isIndex -eq 1 ]; then
+                fixedCommand="$objectName ADD KEY $indexName ($indexProperty"
+              else  
+                fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop} | sed "s/ALTER TABLE//g" | sed "s/alter table//g" | sed "s|'|\"|g" | sed "s/\`//g");
+              fi
               Database=$(echo $fixedCommand | cut -d'.' -f 1)
               AlterTable=$(echo $fixedCommand | cut -d'.' -f 2 | awk '{print $1}')
               fixedCommand=$(echo $fixedCommand | sed "s/$Database.$AlterTable//g" | sed "s/|/;/g" | sed "s/||/;;/g" | sed "s/|||/;;;/g")
@@ -163,12 +177,12 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
               command="pt-online-schema-change --alter '$fixedCommand' D=$Database,t=$AlterTable --host $MySQLHostIP --user $UserName  --password $Password \
               --alter-foreign-keys-method auto  --max-load Threads_running=150 --critical-load Threads_running=300 $replicationProperties \
               --chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
-                
+ 
               # Generate remote file and call if DB & table != "empty"#
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Prompted command number [$loop] is: ALTER TABLE $fixedCommand"
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start changing objects on DB: $Database" 
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start changing table ${AlterTable} structure"
-              echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Sent command to interpreter: $fixedCommand"
+              echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Sent command to interpreter: ===> $fixedCommand"
               echo "thisTime=timeNow" > $base_dir/OnlineSchemaChangerRemote.txt
               echo "echo \"[INFO] Remote command started at AAA\"" >> $base_dir/OnlineSchemaChangerRemote.txt 
               echo $command >> $base_dir/OnlineSchemaChangerRemote.txt
