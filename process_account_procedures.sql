@@ -34,7 +34,8 @@ DECLARE partition_name INT;
 DECLARE path VARCHAR(50); -- DEFAULT '/home/cpq/account_transfer_dump/';
 DECLARE tables_list CURSOR FOR  SELECT schema_name, table_name,SUBSTRING(table_name,1,5) AS table_preffix
                                 FROM   db_manager.partitions_by_instance
-                                WHERE  skip_table = FALSE;
+                                WHERE  skip_table = FALSE
+                                and schema_name<>'openapi';
 
 DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
 
@@ -95,7 +96,8 @@ DECLARE path VARCHAR(50); -- DEFAULT '/home/cpq/account_transfer_dump/';
 
 DECLARE tables_list CURSOR FOR  SELECT schema_name, table_name,SUBSTRING(table_name,1,5) AS table_preffix
                                 FROM   db_manager.partitions_by_instance
-                                WHERE  skip_table = 0;
+                                WHERE  skip_table = 0
+                                AND schema_name <> 'openapi';
 
 DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
 

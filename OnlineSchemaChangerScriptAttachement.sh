@@ -174,29 +174,33 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
               # Constants #
               max_load="Threads_running=150"
               critical_load="Threads_running=1000"
-              command="pt-online-schema-change --alter '$fixedCommand' D=$Database,t=$AlterTable --host $MySQLHostIP --user $UserName  --password $Password \
-              --alter-foreign-keys-method auto  --max-load Threads_running=150 --critical-load Threads_running=300 $replicationProperties \
-              --chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
+              #command="pt-online-schema-change --alter '$fixedCommand' D=$Database,t=$AlterTable --host $MySQLHostIP --user $UserName  --password $Password \
+              #--alter-foreign-keys-method auto  --max-load Threads_running=150 --critical-load Threads_running=300 $replicationProperties \
+              #--chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
  
+              command="pt-online-schema-change --alter '$fixedCommand' D=$Database,t=$AlterTable --host $MySQLHostIP --user $UserName  --password $Password \
+              --alter-foreign-keys-method auto  --max-load Threads_running=25 --critical-load Threads_running=50 $replicationProperties \
+              --chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
+
               # Generate remote file and call if DB & table != "empty"#
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Prompted command number [$loop] is: ALTER TABLE $fixedCommand"
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start changing objects on DB: $Database" 
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start changing table ${AlterTable} structure"
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Sent command to interpreter: ===> $fixedCommand"
-              echo "thisTime=timeNow" > $base_dir/OnlineSchemaChangerRemote.txt
-              echo "echo \"[INFO] Remote command started at AAA\"" >> $base_dir/OnlineSchemaChangerRemote.txt 
-              echo $command >> $base_dir/OnlineSchemaChangerRemote.txt
-              echo "thisTime=timeNow" >> $base_dir/OnlineSchemaChangerRemote.txt
-              echo "echo \"[INFO] Remote command finished at AAA\"" >> $base_dir/OnlineSchemaChangerRemote.txt
-              mv $base_dir/OnlineSchemaChangerRemote.txt $base_dir/OnlineSchemaChangerRemote.sh
-              sed -i '1s/^/#!\/bin\/bash\n /' $base_dir/OnlineSchemaChangerRemote.sh
-              sed -i 's/timeNow/$(date +%Y-%m-%d" "%H:%M:%S)/g' $base_dir/OnlineSchemaChangerRemote.sh
-              sed -i 's/AAA/$thisTime/g' $base_dir/OnlineSchemaChangerRemote.sh
-              sudo chmod +x $scriptDIR/OnlineSchemaChangerRemote.sh
-              sudo scp -o "StrictHostKeyChecking no" $base_dir/OnlineSchemaChangerRemote.sh root@$MySQLHostIP:$base_dir 
+              echo "thisTime=timeNow" > $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.txt
+              echo "echo \"[INFO] Remote command started at AAA\"" >> $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.txt 
+              echo $command >> $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.txt
+              echo "thisTime=timeNow" >> $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.txt
+              echo "echo \"[INFO] Remote command finished at AAA\"" >> $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.txt
+              mv $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.txt $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.sh
+              sed -i '1s/^/#!\/bin\/bash\n /' $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.sh
+              sed -i 's/timeNow/$(date +%Y-%m-%d" "%H:%M:%S)/g' $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.sh
+              sed -i 's/AAA/$thisTime/g' $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.sh
+              sudo chmod +x $scriptDIR/OnlineSchemaChangerRemote_$MySQLHostRegion.sh
+              sudo scp -o "StrictHostKeyChecking no" $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.sh root@$MySQLHostIP:$base_dir 
 
               # Execute remotely #
-              ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP $base_dir/OnlineSchemaChangerRemote.sh
+              ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP $base_dir/OnlineSchemaChangerRemote_$MySQLHostRegion.sh
             else  # Regular commands
               fixedCommand=$(echo $AlterCommand | cut -d ";" -f ${loop} | sed "s|'|\"|g" | sed "s/\`//g");
               Database=$(echo $fixedCommand | cut -d "." -f 1 | awk '{print $NF}')

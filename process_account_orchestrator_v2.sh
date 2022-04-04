@@ -184,18 +184,28 @@ if [ $count_part_sour -gt $count_part_dest ]; then
   exit 1
 fi
 
+################ V2 ##################
+# get new id on destination db and create destination partitions #
+new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"call db_manager.add_partitions_for_account('$account',@result); select @result as '';" 2>&1 | grep -v mysql:)
+if [[ $new_partition_id == ?(-)+([0-9]) ]]; then
+   echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Generated partitions on  $d_region $d_host under instance id $new_partition_id" 
+else
+   echo -e "$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Empty or error generating instance id on destination $d_region $d_host"
+   exit 1 
+fi
+
 # Sync process_account_export to last version on source host#
 #rsync $base_dir/process_account_export.sh root@$s_host:$base_dir/
-scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_export.sh root@$s_host:$base_dir/
-ssh -o "StrictHostKeyChecking no" root@$s_host chmod +x $base_dir/process_account_export.sh
+scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_export_v2.sh root@$s_host:$base_dir/
+ssh -o "StrictHostKeyChecking no" root@$s_host chmod +x $base_dir/process_account_export_v2.sh
 
 # # Sync process_account_import to last version on destination host#
 #rsync $base_dir/process_account_import.sh root@$d_host:$base_dir/
-scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_import.sh root@$d_host:$base_dir/
-ssh -o "StrictHostKeyChecking no" root@$d_host chmod +x $base_dir/process_account_import.sh
+scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_import_v2.sh root@$d_host:$base_dir/
+ssh -o "StrictHostKeyChecking no" root@$d_host chmod +x $base_dir/process_account_import_v2.sh
 
 # # Start generating data & transfers #
-ssh -o "StrictHostKeyChecking no" root@$s_host $base_dir/process_account_export.sh $account $s_region $d_region $source_storage_dir
+ssh -o "StrictHostKeyChecking no" root@$s_host $base_dir/process_account_export_v2.sh $account $s_region $d_region $source_storage_dir $new_partition_id
 sudo scp -o "StrictHostKeyChecking no" root@$s_host:${source_storage_dir}/${account}.* $base_dir/
 if [ -f $base_dir/${account}.zip ]; then
   # Clean files from source after transfer to mid station (Jenkins) #
@@ -206,19 +216,16 @@ if [ -f $base_dir/${account}.zip ]; then
   echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start transfer ${account} data to destination region $d_region on host $d_host"
   sudo scp -o "StrictHostKeyChecking no" $base_dir/${account}.* root@${d_host}:$destination_storage_dir/
   echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Transfer of ${account} data to destination region $d_region on host $d_host finished"
-  ssh -o "StrictHostKeyChecking no" root@$d_host $base_dir/process_account_import.sh $account $destination_storage_dir $rewriteInDestination
+  ssh -o "StrictHostKeyChecking no" root@$d_host $base_dir/process_account_import_v2.sh $account $destination_storage_dir $rewriteInDestination
 
   # Write to log table log messages - source #
-  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, cfac_id=${cfac_id} transfered to ${d_host} ${d_region}');"
+  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered to ${d_host} ${d_region}');"
   mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
 
   # Write to log table log messages - destination #
-  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, cfac_id=${cfac_id} transfered from ${s_host} ${s_region}');"
+  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered from ${s_host} ${s_region}');"
   mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
   
-  # Update transferred value #
-  sqlStatement="UPDATE db_manager.accounts_partitions SET transferred = TRUE WHERE account_name='${account}'"
-  mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
 else
   echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Account data doesn't exists or is not transfered from the source${NOC}"
   exit 1  
