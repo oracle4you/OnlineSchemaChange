@@ -186,13 +186,18 @@ fi
 
 ################ V2 ##################
 # get new id on destination db and create destination partitions #
-new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"call db_manager.add_partitions_for_account('$account',@result); select @result as '';" 2>&1 | grep -v mysql:)
-if [[ $new_partition_id == ?(-)+([0-9]) ]]; then
-   echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Generated partitions on  $d_region $d_host under instance id $new_partition_id" 
+if [ $rewriteInDestination == "N" ]; then
+  new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"call db_manager.add_partitions_for_account('$account',@result); select @result as '';" 2>&1 | grep -v mysql:)
+  if [[ $new_partition_id == ?(-)+([0-9]) ]]; then
+    echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Generated partitions on  $d_region $d_host under instance id $new_partition_id" 
+  else
+    echo -e "$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Empty or error generating instance id on destination $d_region $d_host"
+    exit 1 
+  fi
 else
-   echo -e "$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Empty or error generating instance id on destination $d_region $d_host"
-   exit 1 
-fi
+  new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"SELECT partition_id from db_manager.accounts_partitions where account_name='$account';" 2>&1 | grep -v mysql:)
+  echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found partitions on  $d_region $d_host under instance id $new_partition_id" 
+fi  
 
 # Sync process_account_export to last version on source host#
 #rsync $base_dir/process_account_export.sh root@$s_host:$base_dir/
@@ -219,11 +224,11 @@ if [ -f $base_dir/${account}.zip ]; then
   ssh -o "StrictHostKeyChecking no" root@$d_host $base_dir/process_account_import_v2.sh $account $destination_storage_dir $rewriteInDestination
 
   # Write to log table log messages - source #
-  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered to ${d_host} ${d_region}');"
+  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered from ${s_host} ${s_region} to ${d_host} ${d_region}');"
   mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
 
   # Write to log table log messages - destination #
-  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered from ${s_host} ${s_region}');"
+  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered from ${s_host} ${s_region} to ${d_host} ${d_region}');"
   mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
   
 else
@@ -264,7 +269,10 @@ if [ $impersonateEmails == "Y" ]; then
   mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
 
   echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] email data impersonated."
-fi  
+fi
+
+# Clean files from middle Jenkins #
+rm -rf ${base_dir}/${account}.*
 
 
 
