@@ -1,10 +1,14 @@
 #!/bin/bash
 
-db_user="izzy"
-db_pass="izzy"
-db_host="10.70.1.7"
+db_user="root"
+db_pass="root"
+time=$(date +%Y-%m-%d-%H:%M:%S)
 
 echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start cleaning /var/log/mysql/error.log"
+# Backup error log #
+cp /var/log/mysql/error.log /var/log/mysql/error.log.$time
+
+# Clean error log #
 cat /dev/null > /var/log/mysql/error.log
 
 master_host=$(mysql -u$db_user -p$db_pass -e"show slave status \G" 2>&1 | grep -v mysql: | grep Master_Host: | awk '{print $NF}')

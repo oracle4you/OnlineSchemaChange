@@ -14,6 +14,7 @@ account=$3
 disableOnSource=$4
 rewriteInDestination=$5
 impersonateEmails=$6
+dryRun=$7
 array_EU="10.50.0.5,10.50.0.12,10.50.0.4" # EU Hosts - On this list first slaves and first between slaves is non snapshoted
 array_US="10.54.0.5,10.54.0.4,10.54.0.8"  # US Hosts - On this list first slaves and first between slaves is non snapshoted
 array_TS="10.70.1.10"
@@ -149,14 +150,14 @@ fi
 echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found master for region $d_region $d_host"
 
 # Sync procedures on source --> write to master or TS as stand alone #
-mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
+mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -D db_manager 2>&1 < $base_dir/process_account_procedures_v2.sql | grep -v mysql:
 
 
 # Sync procedures on destination --> write to master or TS as stand alone #
-mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -D db_manager 2>&1 < $base_dir/process_account_procedures.sql | grep -v mysql:
+mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -D db_manager 2>&1 < $base_dir/process_account_procedures_v2.sql | grep -v mysql:
 
 # Check if account exists on destination #
-account_exists_dest=$(mysql -N -s -uroot -proot -h $d_host -e"select count(1) from db_manager.accounts_partitions where account_name='$account'" 2>&1 | grep -v mysql:)
+account_exists_dest=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"select count(1) from db_manager.accounts_partitions where account_name='$account'" 2>&1 | grep -v mysql:)
 if [[ $account_exists_dest -ne 0 && $rewriteInDestination == "N" ]]; then
   echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Account with same name exists on destination $d_region region ${NOC}"
   exit 1
@@ -186,93 +187,103 @@ fi
 
 ################ V2 ##################
 # get new id on destination db and create destination partitions #
-if [ $rewriteInDestination == "N" ]; then
-  new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"call db_manager.add_partitions_for_account('$account',@result); select @result as '';" 2>&1 | grep -v mysql:)
-  if [[ $new_partition_id == ?(-)+([0-9]) ]]; then
-    echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Generated partitions on  $d_region $d_host under instance id $new_partition_id" 
+if [ $dryRun == "N" ]; then
+  if [ $rewriteInDestination == "N" ]; then
+    new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"call db_manager.add_partitions_for_account('$account',@result); select @result as '';" 2>&1 | grep -v mysql:)
+    if [[ $new_partition_id == ?(-)+([0-9]) ]]; then
+      echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Generated partitions on  $d_region $d_host under instance id $new_partition_id" 
+      echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Account $account (cfac_id=$cfac_id) will be transfered from $s_region to $d_region as $account (cfac_id=$new_partition_id)"
+    else
+      echo -e "$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Empty or error generating instance id on destination $d_region $d_host"
+      exit 1 
+    fi
   else
-    echo -e "$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Empty or error generating instance id on destination $d_region $d_host"
-    exit 1 
+    new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"SELECT partition_id from db_manager.accounts_partitions where account_name='$account';" 2>&1 | grep -v mysql:)
+    echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found partitions on  $d_region $d_host under instance id $new_partition_id" 
   fi
+    
+
+  # Sync process_account_export to last version on source host#
+  #rsync $base_dir/process_account_export.sh root@$s_host:$base_dir/
+  scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_export_v2.sh root@$s_host:$base_dir/
+  ssh -o "StrictHostKeyChecking no" root@$s_host chmod +x $base_dir/process_account_export_v2.sh
+
+  # # Sync process_account_import to last version on destination host#
+  #rsync $base_dir/process_account_import.sh root@$d_host:$base_dir/
+  scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_import_v2.sh root@$d_host:$base_dir/
+  ssh -o "StrictHostKeyChecking no" root@$d_host chmod +x $base_dir/process_account_import_v2.sh
+
+  # # Start generating data & transfers #
+  ssh -o "StrictHostKeyChecking no" root@$s_host $base_dir/process_account_export_v2.sh $account $s_region $d_region $source_storage_dir $new_partition_id
+  sudo scp -o "StrictHostKeyChecking no" root@$s_host:${source_storage_dir}/${account}.* $base_dir/
+  if [ -f $base_dir/${account}.zip ]; then
+    # Clean files from source after transfer to mid station (Jenkins) #
+    ssh -o "StrictHostKeyChecking no" root@$s_host rm -rf ${source_storage_dir}/${account}.*
+    ssh -o "StrictHostKeyChecking no" root@$s_host rm -rf ${source_storage_dir}/account_transfer_dump/
+
+    # Clean old files on destination from previous processes
+    ssh -o "StrictHostKeyChecking no" root@$d_host rm -rf ${destination_storage_dir}/*.zip $destination_storage_dir/*.sh $destination_storage_dir/*.atrn
+    
+    # Start transfer data from mid station (Jenkins) to destination #
+    echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start transfer ${account} data to destination region $d_region on host $d_host"
+    sudo scp -o "StrictHostKeyChecking no" $base_dir/${account}.* root@${d_host}:$destination_storage_dir/
+    echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Transfer of ${account} data to destination region $d_region on host $d_host finished"
+    ssh -o "StrictHostKeyChecking no" root@$d_host $base_dir/process_account_import_v2.sh $account $destination_storage_dir $rewriteInDestination
+
+    # Write to log table log messages - source #
+    sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('ACCOUNT TRANSFER',now(),'Account ${account}, old_cfac_id=${cfac_id} transfered from ${s_host} ${s_region} to ${d_host} ${d_region} as new_cfac_id=$new_partition_id');"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    # Write to log table log messages - destination #
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+    
+  else
+    echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Account data doesn't exists or is not transfered from the source${NOC}"
+    exit 1  
+  fi
+
+  # Convert account to not active #
+  if [ $disableOnSource == "Y" ]; then
+    # ToDo ==> Ask Alon if we need to remove record from `db_manager`.`accounts_partitions`
+    sqlStatement="UPDATE configuration.cfas_account_settings SET cfas_cfac_id = ${cfac_id}*1000000 WHERE cfas_cfac_id = ${cfac_id};"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+    echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Value of ${account} cfac_id on source $s_region, changed on table configuration.cfas_account_settings from ${cfac_id} to ${cfac_id}000000"
+  fi  
+
+  # Impersonate emails #
+  if [ $impersonateEmails == "Y" ]; then
+    # ToDo ==> Ask Alon if we need to remove record from `db_manager`.`accounts_partitions`
+    sqlStatement="UPDATE configuration.cfus_users set cfus_email = 'valooto.lockwait@gmail.com';"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    sqlStatement="UPDATE configuration.cfco_contacts set cfco_email=concat(cfco_email, '_stage') WHERE cfco_email is not null AND cfco_email != '' AND cfco_email NOT LIKE '%s_stage%s';"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    sqlStatement="UPDATE dealhub.dhus_users set dhus_email=concat(dhus_email, '_stage') WHERE dhus_email is not null AND dhus_email != '' AND dhus_email NOT LIKE '%s_stage%s';"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    sqlStatement="UPDATE dealhub.guus_guest_users set guus_email=concat(guus_email, '_stage') WHERE guus_email is not null AND guus_email != '' AND guus_email NOT LIKE '%s_stage%s';"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    sqlStatement="UPDATE configuration.cfus_users set cfus_password ='\$2a\$12\$jwx4jHFMm/LcWYuiBALO2uM3mkbLq5HISt17cpm3YRs2J/EZ.5IKa';"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    sqlStatement="UPDATE configuration.cfss_server_settings SET cfss_value= '' WHERE cfss_key='webhook.auth.key';"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    sqlStatement="TRUNCATE TABLE openapi.webhook_events; TRUNCATE TABLE openapi.webhooks;"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    sqlStatement="UPDATE configuration.cfas_account_settings SET cfas_integration_type = 'NONE' WHERE cfas_cfac_id = $new_partition_id;"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+    echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] email data impersonated."
+  fi
+
+  # Clean files from middle Jenkins #
+  rm -rf ${base_dir}/${account}.*
 else
-  new_partition_id=$(mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"SELECT partition_id from db_manager.accounts_partitions where account_name='$account';" 2>&1 | grep -v mysql:)
-  echo  "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Found partitions on  $d_region $d_host under instance id $new_partition_id" 
-fi  
-
-# Sync process_account_export to last version on source host#
-#rsync $base_dir/process_account_export.sh root@$s_host:$base_dir/
-scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_export_v2.sh root@$s_host:$base_dir/
-ssh -o "StrictHostKeyChecking no" root@$s_host chmod +x $base_dir/process_account_export_v2.sh
-
-# # Sync process_account_import to last version on destination host#
-#rsync $base_dir/process_account_import.sh root@$d_host:$base_dir/
-scp -o "StrictHostKeyChecking no" -r $base_dir/process_account_import_v2.sh root@$d_host:$base_dir/
-ssh -o "StrictHostKeyChecking no" root@$d_host chmod +x $base_dir/process_account_import_v2.sh
-
-# # Start generating data & transfers #
-ssh -o "StrictHostKeyChecking no" root@$s_host $base_dir/process_account_export_v2.sh $account $s_region $d_region $source_storage_dir $new_partition_id
-sudo scp -o "StrictHostKeyChecking no" root@$s_host:${source_storage_dir}/${account}.* $base_dir/
-if [ -f $base_dir/${account}.zip ]; then
-  # Clean files from source after transfer to mid station (Jenkins) #
-  ssh -o "StrictHostKeyChecking no" root@$s_host rm -rf ${source_storage_dir}/${account}.*
-  ssh -o "StrictHostKeyChecking no" root@$s_host rm -rf ${source_storage_dir}/account_transfer_dump/
-
-  # Start transfer data from mid station (Jenkins) to destination #
-  echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start transfer ${account} data to destination region $d_region on host $d_host"
-  sudo scp -o "StrictHostKeyChecking no" $base_dir/${account}.* root@${d_host}:$destination_storage_dir/
-  echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Transfer of ${account} data to destination region $d_region on host $d_host finished"
-  ssh -o "StrictHostKeyChecking no" root@$d_host $base_dir/process_account_import_v2.sh $account $destination_storage_dir $rewriteInDestination
-
-  # Write to log table log messages - source #
-  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered from ${s_host} ${s_region} to ${d_host} ${d_region}');"
-  mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  # Write to log table log messages - destination #
-  sqlStatement="INSERT INTO db_manager.log_messages (logger, msg_date, log_msg) VALUES ('TRANSFER ACCOUNT',now(),'Account ${account}, old_cfac_id=${cfac_id}, new_cfac_id=$new_partition_id transfered from ${s_host} ${s_region} to ${d_host} ${d_region}');"
-  mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-  
-else
-  echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Account data doesn't exists or is not transfered from the source${NOC}"
-  exit 1  
-fi
-
-# Convert account to not active #
-if [ $disableOnSource == "Y" ]; then
-  # ToDo ==> Ask Alon if we need to remove record from `db_manager`.`accounts_partitions`
-  sqlStatement="ALTER TABLE configuration.cfac_accounts DROP PARTITION ${account}_${cfac_id};"
-  mysql -N -s -uroot -proot -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-  echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Status of cfac_id=$cfac_id account ${account} partition removed on configuration.cfac_accounts"
-fi  
-
-# Impersonate emails #
-if [ $impersonateEmails == "Y" ]; then
-  # ToDo ==> Ask Alon if we need to remove record from `db_manager`.`accounts_partitions`
-  sqlStatement="UPDATE configuration.cfus_users set cfus_email = 'valooto.lockwait@gmail.com';"
-  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  sqlStatement="UPDATE configuration.cfco_contacts set cfco_email=concat(cfco_email, '_stage') WHERE cfco_email is not null AND cfco_email != '' AND cfco_email NOT LIKE '%s_stage%s';"
-  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  sqlStatement="UPDATE dealhub.dhus_users set dhus_email=concat(dhus_email, '_stage') WHERE dhus_email is not null AND dhus_email != '' AND dhus_email NOT LIKE '%s_stage%s';"
-  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  sqlStatement="UPDATE dealhub.guus_guest_users set guus_email=concat(guus_email, '_stage') WHERE guus_email is not null AND guus_email != '' AND guus_email NOT LIKE '%s_stage%s';"
-  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  sqlStatement="UPDATE configuration.cfus_users set cfus_password ='\$2a\$12\$jwx4jHFMm/LcWYuiBALO2uM3mkbLq5HISt17cpm3YRs2J/EZ.5IKa';"
-  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  sqlStatement="UPDATE configuration.cfss_server_settings SET cfss_value= '' WHERE cfss_key='webhook.auth.key';"
-  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  sqlStatement="TRUNCATE TABLE openapi.webhook_events; TRUNCATE TABLE openapi.webhooks;"
-  mysql -N -s -uroot -proot -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-
-  echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] email data impersonated."
-fi
-
-# Clean files from middle Jenkins #
-rm -rf ${base_dir}/${account}.*
-
+  echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Dry run finished successfully. Account $account can be transferred from $s_region to $d_region"    
+fi # dryRun
 
 

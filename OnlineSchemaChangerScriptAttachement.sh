@@ -35,7 +35,7 @@ elif [ $MySQLHostRegion == "STAGE-US-DB01" ]; then
 elif [ $MySQLHostRegion == "STAGE-CPQ" ]; then
   host="10.101.2.10"
 elif [ $MySQLHostRegion == "TEST" ]; then
-  host="10.70.1.8"
+  host="10.70.1.10"
 elif [ $MySQLHostRegion == "API-DB" ]; then
   host="10.66.0.20"
 
@@ -248,7 +248,16 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
           echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Clean tables after dry run - ${dropCommand}\n"
           mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$dropCommand" 2>&1 | grep -v mysql:
           dropCommand=""
-        fi    
-        echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Run script $scriptFile finished\n"
+        fi
+
+        if [ $dryRun == 'No' ]; then
+          sqlStatement="CREATE TABLE IF NOT EXISTS db_manager.schema_changes (script_name VARCHAR(128) PRIMARY KEY,last_applied TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);"
+          mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+          sqlStatement="REPLACE INTO db_manager.schema_changes (script_name) values ('$scriptFile');"     
+          mysql -u$UserName -p$Password -P$Port -h$MySQLHostIP -N -s -e"$sqlStatement" 2>&1 | grep -v mysql:
+
+          echo -e "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Run script $scriptFile finished\n"
+        fi  
       done 
   done
