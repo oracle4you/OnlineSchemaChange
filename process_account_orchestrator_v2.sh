@@ -1,12 +1,13 @@
 #!/bin/bash
 # Autor: Izzy Fayon
-# Ver  : 1.5
+# Ver  : 1.6
 # 1.0  : Initial script
 # 1.1  : Better validation on parameters
 # 1.2  : Sync of export & import on source and destination hosts
 # 1.3  : Sync of SP's on MySQL on source & destination
 # 1.4  : Set status of cfac_id as NOT ACTIVE by 4-th parameter if provided (default is N)
 # 1.5  : Added list of missing partitioned tables on error message
+# 1.6  : Added changes to make it compatible to v2
 
 s_region=$1
 d_region=$2
@@ -236,7 +237,16 @@ if [ $dryRun == "N" ]; then
 
     # Write to log table log messages - destination #
     mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
-    
+
+    # Update instance_url on destination (only when transfer production data) #
+    if [ $d_region == "US" ]; then
+      instanceURL="service-us1.dealhub.io"
+    elif [ $d_region == "EU" ]; then  
+      instanceURL="service-eu1.dealhub.io"
+    fi
+    sqlStatement="UPDATE configuration.cfas_account_settings SET cfas_instance_url = '$instanceURL' WHERE cfas_cfac_id=$new_partition_id;"
+    mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
+
   else
     echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Account data doesn't exists or is not transfered from the source${NOC}"
     exit 1  
@@ -244,7 +254,6 @@ if [ $dryRun == "N" ]; then
 
   # Convert account to not active #
   if [ $disableOnSource == "Y" ]; then
-    # ToDo ==> Ask Alon if we need to remove record from `db_manager`.`accounts_partitions`
     sqlStatement="UPDATE configuration.cfas_account_settings SET cfas_cfac_id = ${cfac_id}*1000000 WHERE cfas_cfac_id = ${cfac_id};"
     mysql -N -s -u$dbUserName -p$dbPassword -h $m_s_host -e"$sqlStatement" 2>&1 | grep -v mysql:
     echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Value of ${account} cfac_id on source $s_region, changed on table configuration.cfas_account_settings from ${cfac_id} to ${cfac_id}000000"
@@ -252,7 +261,6 @@ if [ $dryRun == "N" ]; then
 
   # Impersonate emails #
   if [ $impersonateEmails == "Y" ]; then
-    # ToDo ==> Ask Alon if we need to remove record from `db_manager`.`accounts_partitions`
     sqlStatement="UPDATE configuration.cfus_users set cfus_email = 'valooto.lockwait@gmail.com';"
     mysql -N -s -u$dbUserName -p$dbPassword -h $d_host -e"$sqlStatement" 2>&1 | grep -v mysql:
 

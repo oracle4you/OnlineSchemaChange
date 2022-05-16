@@ -1,0 +1,75 @@
+Host STAGE-US-CONSOLIDATED-1
+  HostName STAGE-US-CONSOLIDATED-1
+  User root
+
+Host STAGE-US-CONSOLIDATED-2
+  HostName STAGE-US-CONSOLIDATED-2
+  User root
+
+Host STAGE-US-CONSOLIDATED-3
+  HostName STAGE-US-CONSOLIDATED-3
+  User root
+
+Host STAGE-US-CONSOLIDATED-4
+  HostName STAGE-US-CONSOLIDATED-4
+  User root
+
+Host STAGE-US-CONSOLIDATED-5
+  HostName STAGE-US-CONSOLIDATED-5
+  User root
+
+Host PROD-EU-JENKINS
+  HostName PROD-EU-JENKINS
+  User root
+
+  Host izzy-ubuntu-01
+  HostName izzy-ubuntu-01
+  User root
+
+Host izzy-ubuntu-02
+  HostName izzy-ubuntu-02
+  User root
+
+Host izzy-ubuntu-08
+  HostName izzy-ubuntu-08
+  User root
+
+Host PROD-US1-DB03
+  HostName PROD-US1-DB03
+  User root
+
+Host PROD-US1-DB04
+  HostName PROD-US1-DB04
+  User root
+
+Host PROD-US1-DB06
+  HostName PROD-US1-DB06
+  User root
+
+Host PROD-US1-MAXSCALE01
+  HostName PROD-US1-MAXSCALE01
+  User root
+
+Host PROD-US1-MAXSCALE02
+  HostName PROD-US1-MAXSCALE02
+  User root
+
+  Host PROD-EU1-DB03
+  HostName PROD-EU1-DB03
+  User root
+
+Host PROD-EU1-DB04
+  HostName PROD-EU1-DB04
+  User root
+
+Host PROD-EU1-DB06
+  HostName PROD-EU1-DB06
+  User root
+
+Host PROD-EU1-MAXSCALE01
+  HostName PROD-EU1-MAXSCALE01
+  User root
+
+Host PROD-EU1-MAXSCALE02
+  HostName PROD-EU1-MAXSCALE02
+  User root

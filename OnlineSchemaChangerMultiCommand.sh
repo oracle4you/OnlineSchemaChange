@@ -1,4 +1,7 @@
 #!/bin/bash
+# Autor: Izzy Fayon
+# Ver  : 1.0
+# 1.0  : Initial script
 MySQLHostRegion=$1
 Port=$2
 UserName=$3

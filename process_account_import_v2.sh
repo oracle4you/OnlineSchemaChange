@@ -57,13 +57,16 @@ else
   exit 1
 fi  
 
-reorgRoutineExists=$(mysql -N -s -u$dbUserName -p$dbPassword -h localhost -e"SELECT count(1) from information_schema.routines where routine_name='dump_entire_partition_account_reorganize' and routine_schema='db_manager'" 2>&1 | grep -v mysql:)
-if [[ $reorgRoutineExists -eq 0 ]]; then
-  echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Missig routine db_manager.dump_entire_partition_account_reorganize on destination MySQL. Process stopped !!!${NOC}"
-  exit 1
-fi  
 
-if [ $rewriteInDestination == "N" ]; then
+# On V2 this step is obsolete
+#reorgRoutineExists=$(mysql -N -s -u$dbUserName -p$dbPassword -h localhost -e"SELECT count(1) from information_schema.routines where routine_name='dump_entire_partition_account_reorganize' and routine_schema='db_manager'" 2>&1 | grep -v mysql:)
+#if [[ $reorgRoutineExists -eq 0 ]]; then
+#  echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Missig routine db_manager.dump_entire_partition_account_reorganize on destination MySQL. Process stopped !!!${NOC}"
+#  exit 1
+#fi  
+
+
+#if [ $rewriteInDestination == "N" ]; then --> on V2 is always taking the previous generated cfac_id
   if [ -f ${destination_storage_dir}/${account}.sh ]; then
     #chmod +x $base_dir/${account}.sh
     echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start reorganizing partitions on the DB."
@@ -72,7 +75,7 @@ if [ $rewriteInDestination == "N" ]; then
     echo -e "\n$(date +%Y-%m-%d" "%H:%M:%S) ${RED}[ERROR] Missig file $account.sh. Process stopped!!!${NOC}" 
     exit 1
   fi   
-fi  
+#fi  
 
 for i in  `ls $path/*.sql` ; do
         db=$(getDBName $i | sed "s|$path||g" | sed "s/\///g")

@@ -20,9 +20,8 @@ base_dir="/home/cpq"
 
 # Links #
 #cd /home/cpq
-# wget https://downloads.percona.com/downloads/percona-toolkit/3.3.1/binary/debian/bionic/x86_64/percona-toolkit_3.3.1-1.bionic_amd64.deb
-# missed packages: apt install libdbi-perl libdbd-mysql-perl libterm-readkey-perl libio-socket-ssl-perl
-# dpkg -i percona-toolkit_3.3.1-1.bionic_amd64.deb
+# wget https://github.com/github/gh-ost/releases/download/v1.1.4/gh-ost_1.1.4_amd64.deb
+
 
 if [[ -z $replicaLag || $replicaLag -eq 0 ]]; then 
   replicaLag=1; 
@@ -38,7 +37,7 @@ elif [ $MySQLHostRegion == "STAGE-US-DB01" ]; then
 elif [ $MySQLHostRegion == "STAGE-CPQ" ]; then
   host="10.101.2.10"
 elif [ $MySQLHostRegion == "TEST" ]; then
-  host="10.70.1.10"
+  host="10.70.1.7"
 elif [ $MySQLHostRegion == "API-DB" ]; then
   host="10.66.0.20"
 
@@ -90,20 +89,16 @@ fi
 
 if [[ -n $replicaLagSec && $replicaLagSec -gt 0 ]]; then
 #  replicationProperties="--check-slave-lag "
-  replicationProperties=" --nocheck-replication-filters --max-lag  $replicaLagSec"
+  replicationProperties=" --max-lag-millis=$replicaLagSec"
 else
-  replicationProperties=" --nocheck-replication-filters "
+  replicationProperties=" --max-lag-millis=1500"
 fi
 
 if [ $dryRun == 'Yes' ]; then
-  execute="--dry-run --print " #--drop-new-table"
+  execute=""
   replicationProperties=""
 else
-  #execute="--execute --no-drop-old-table" # --no-drop-new-table"
   execute="--execute" # --no-drop-new-table"
-  if [ $replicaLagSec -eq 0 ]; then
-    replicaLagSec=60
-  fi
 fi
 
 # Check array file names - if no sql file out with failure
@@ -127,9 +122,9 @@ fi
 for MySQLHostIP in $(echo $MySQLHostIPArray)
   do
     # Start working on (for each file of picked host) #
-    perconaInstalled=$(ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP which pt-online-schema-change | wc -l)
+    perconaInstalled=$(ssh -o "StrictHostKeyChecking no" root@$MySQLHostIP which gh-ost | wc -l)
     if  [ $perconaInstalled -eq 0 ]; then
-      echo "$(date +%Y-%m-%d" "%H:%M:%S) [ERROR] Percona online schema change package not installed on destination host $MySQLHostIP. Process will be stopped"
+      echo "$(date +%Y-%m-%d" "%H:%M:%S) [ERROR] gh-ost package not installed on destination host $MySQLHostIP. Process will be stopped"
       break
       exit 1
     fi
@@ -181,10 +176,14 @@ for MySQLHostIP in $(echo $MySQLHostIPArray)
               #--alter-foreign-keys-method auto  --max-load Threads_running=150 --critical-load Threads_running=300 $replicationProperties \
               #--chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
  
-              command="pt-online-schema-change --alter '$fixedCommand' D=$Database,t=$AlterTable --host $MySQLHostIP --user $UserName  --password $Password \
-              --alter-foreign-keys-method auto  --max-load Threads_running=25 --critical-load Threads_running=50 $replicationProperties \
-              --chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
+              #command="pt-online-schema-change --alter '$fixedCommand' D=$Database,t=$AlterTable --host $MySQLHostIP --user $UserName  --password $Password \
+              #--alter-foreign-keys-method auto  --max-load Threads_running=25 --critical-load Threads_running=50 $replicationProperties \
+              #--chunk-size 1000  --chunk-time 0.5 --chunk-size-limit 4.0 --progress time,10 $execute"
 
+              ########### V2 ###########
+              command="gh-ost --initially-drop-old-table --initially-drop-ghost-table --user='$UserName' --password='$Password' --host=$MySQLHostIP --port=3306 --database='$Database' \
+               --table='$AlterTable' --alter='$fixedCommand' --verbose --assume-rbr --allow-on-master --ok-to-drop-table $replicationProperties $execute"
+              ##########################
               # Generate remote file and call if DB & table != "empty"#
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Prompted command number [$loop] is: ALTER TABLE $fixedCommand"
               echo "$(date +%Y-%m-%d" "%H:%M:%S) [INFO] Start changing objects on DB: $Database" 

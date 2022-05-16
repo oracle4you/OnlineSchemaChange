@@ -16,7 +16,7 @@ sudo mkdir /home/cpq/OnlineSchemaChange/work
 
 cd /home/cpq/OnlineSchemaChange/work
 
-git clone git@bitbucket.org:dealhubio/prod.git -b "release/20220501"
+git clone git@bitbucket.org:dealhubio/prod.git -b "release/20220522"
 
 mv /home/cpq/OnlineSchemaChange/work/prod/erd/*.sql  /home/cpq/OnlineSchemaChange/Latest
 sudo rm -rf /home/cpq/OnlineSchemaChange/work
